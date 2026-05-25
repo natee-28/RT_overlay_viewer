@@ -23,3 +23,6 @@ cd path_to_RT_overlay_viewer
 install_env.bat
 run_app.bat
 ```
+## Example Output
+
+![Quick DICOM Preview](Screenshot2026-05-25 203601.png)
