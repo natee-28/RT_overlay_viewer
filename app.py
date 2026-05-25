@@ -53,6 +53,7 @@ if st.button("Run"):
             ct_headers=ct_headers,
             ct_volume=ct,
             dose=dose,
+            rd=rd,
             ct_headers_for_spacing=ct_headers
         )
 
@@ -68,6 +69,7 @@ if st.button("Run"):
             ct_headers=ct_headers,
             ct_volume=ct,
             dose=dose,
+            rd=rd,
             ct_headers_for_spacing=ct_headers
         )
 

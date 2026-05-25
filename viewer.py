@@ -292,6 +292,7 @@ def export_overlay_ct_series(
     ct_headers,
     ct_volume,
     dose,
+    rd,
     ct_headers_for_spacing
 ):
 
@@ -399,6 +400,7 @@ def export_color_overlay_ct_series(
     ct_headers,
     ct_volume,
     dose,
+    rd,
     ct_headers_for_spacing
 ):
 
@@ -510,10 +512,8 @@ def export_color_overlay_ct_series(
 # MAIN
 # -----------------------------
 """
-folder = input("Enter DICOM folder path: ")
+if __name__ == "__main__":
 
-ct,ct_headers = load_dicom_series(folder)
-"""
 
 folder = input("Enter DICOM folder path: ")
 
@@ -627,19 +627,7 @@ def update_display():
     )
 
     # ---------------- SITK DOSE ----------------
-    """
-    dose_slice = dose_ct[:, :, i]
 
-    global_max = np.max(dose)
-    dose_norm = dose_slice / global_max #if global_max > 0 else dose_slice
-
-    slice_max = np.max(dose_norm)
-
-    print(
-    "CT slice:", i,
-    "norm max:", slice_max
-    )
-    """
     # ---------------- RAW DOSE MASK ROUTE ----------------
     dose_i = int(i * dose.shape[0] / ct.shape[2])
     dose_i = min(max(dose_i, 0), dose.shape[0] - 1)
@@ -709,14 +697,14 @@ def update_display():
  
     
     # ---------------- BODY ----------------
-    """
+    
     ax.contour(
         body_mask[:, :, i],
         levels=[0.5],
         colors="r",
         linewidths=1
     )
-    """
+    
     ax.set_title(
         f"Slice {i+1}/{ct.shape[2]} | WL={WL}, WW={WW}"
     )
@@ -760,7 +748,7 @@ def on_key(event):
 fig.canvas.mpl_connect("key_press_event", on_key)
 
 update_display()
-"""
+
 output_folder=r"D:\RT_project\EXPORT_CT"
 if os.path.exists(output_folder):
     shutil.rmtree(output_folder)
@@ -774,7 +762,7 @@ export_overlay_ct_series(
     dose=dose,
     ct_headers_for_spacing=ct_headers
 )
-"""
+
 output_folder = r"D:\RT_project\EXPORT_CT_COLOR"
 
 if os.path.exists(output_folder):
@@ -790,5 +778,6 @@ export_color_overlay_ct_series(
     ct_headers_for_spacing=ct_headers
 )
 
-if __name__ == "__main__":
-    plt.show()
+
+plt.show()
+"""
