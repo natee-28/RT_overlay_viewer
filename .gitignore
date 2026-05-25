@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+EXPORT_CT/
+EXPORT_CT_COLOR/
+*.dcm
