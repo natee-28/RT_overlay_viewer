@@ -25,4 +25,4 @@ run_app.bat
 ```
 ## Example Output
 
-![Quick DICOM Preview](Screenshot1.png)
+![Quick DICOM Preview](Screenshot_1.png)
