@@ -1,13 +1,17 @@
 # RT Dose Overlay DICOM Exporter
 
 CT + RTDOSE overlay viewer  
-Derived DICOM export  
+
+## Export Modes
+
+RGB Color Overlay  
 PACS-compatible grayscale overlay  
-Experimental RGB overlay
+DICOM Overlay Plane (6000/6002)
+Synapse PACs compatible
 
 ---
 
-## Installation
+### Installation
 
 1. Install Miniconda  
 https://www.anaconda.com/docs/getting-started/miniconda/main
@@ -19,8 +23,13 @@ https://www.anaconda.com/docs/getting-started/miniconda/main
 4. Create environment and install packages
 
 ```bash
-cd path_to_RT_overlay_viewer
-install_env.bat
+conda create -n rt_env python=3.11
+conda activate rt_env
+
+pip install -r requirements.txt
+```
+#### Run 
+```bash
 run_app.bat
 ```
 ## Example Output
