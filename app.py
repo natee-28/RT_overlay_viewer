@@ -10,6 +10,7 @@ from viewer import (
     find_rtdose_file,
     export_overlay_ct_series,
     export_color_overlay_ct_series,
+    export_ct_with_overlay_planes,
 )
 
 st.title("RT Dose Overlay DICOM Exporter")
@@ -21,6 +22,7 @@ export_type = st.radio(
     [
         "Grayscale DICOM - WL/WW preserved",
         "Color DICOM - RGB preview",
+        "DICOM Overlay Plane - experimental",
     ]
 )
 
@@ -57,7 +59,8 @@ if st.button("Run"):
             ct_headers_for_spacing=ct_headers
         )
 
-    else:
+    elif export_type == "Color DICOM - RGB preview":
+        
         output_folder = r"D:\RT_project\EXPORT_CT_COLOR"
 
         if os.path.exists(output_folder):
@@ -72,5 +75,21 @@ if st.button("Run"):
             rd=rd,
             ct_headers_for_spacing=ct_headers
         )
+    elif export_type == "DICOM Overlay Plane - experimental":
 
+        output_folder = r"D:\RT_project\EXPORT_CT_OVERLAY_PLANE"
+
+        if os.path.exists(output_folder):
+            shutil.rmtree(output_folder)
+
+        os.makedirs(output_folder)
+
+        export_ct_with_overlay_planes(
+            output_folder=output_folder,
+            ct_headers=ct_headers,
+            ct_volume=ct,
+            dose=dose,
+            rd=rd,
+            ct_headers_for_spacing=ct_headers
+        )
     st.success(f"Export completed: {output_folder}")
