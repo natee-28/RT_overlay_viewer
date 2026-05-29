@@ -1,13 +1,22 @@
 # RT Dose Overlay DICOM Exporter
 
-CT + RTDOSE overlay viewer  
+CT + RTDOSE overlay viewer and DICOM exporter.
+
+## Features
+
+- CT + RTDOSE visualization
+- Derived DICOM export
+- RGB color overlay export
+- DICOM Overlay Plane export (6000/6002)
+- Preserves CT window/level using Overlay Plane
+- Tested with Philips Workstation
+- Tested with Fujifilm Synapse PACS
 
 ## Export Modes
 
-RGB Color Overlay  
-PACS-compatible grayscale overlay  
-DICOM Overlay Plane (6000/6002)
-Synapse PACs compatible
+1. CT grayscale export
+2. RGB color overlay export
+3. DICOM Overlay Plane export (experimental)
 
 ---
 
@@ -36,3 +45,7 @@ run_app.bat
 
 ![Quick DICOM Preview](Screenshot1.png)
 ![Quick DICOM Preview](Screenshot2.png)
+
+## Notes
+
+Window/Level functionality was preserved because original CT pixel data remained unchanged.
