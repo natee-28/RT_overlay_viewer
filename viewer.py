@@ -12,8 +12,10 @@ import copy
 from skimage.segmentation import find_boundaries
 from scipy.ndimage import gaussian_filter
 from pydicom.dataset import Dataset, FileDataset
+from pydicom.dataset import FileMetaDataset
 from pydicom.sequence import Sequence
 import datetime
+import highdicom as hd
 
 
 def export_full_ct_series(src_folder, dst_folder):
@@ -398,7 +400,7 @@ def export_color_overlay_ct_series(
     ct_volume,
     dose,
     rd,
-    ct_headers_for_spacing
+    ct_headers_for_spacing,
 ):
 
     os.makedirs(output_folder, exist_ok=True)
@@ -413,7 +415,7 @@ def export_color_overlay_ct_series(
 
         # ---------------- CT grayscale to 8-bit ----------------
         WL = 40
-        WW = 1024
+        WW = 400
 
         img8 = np.clip((img - (WL - WW / 2)) / WW * 255, 0, 255).astype(np.uint8)
 
@@ -555,7 +557,8 @@ def export_ct_with_overlay_planes(
     os.makedirs(output_folder, exist_ok=True)
     new_series_uid = pydicom.uid.generate_uid()
     global_max = np.max(dose)
-
+    saved_ct_overlay_headers = []
+    
     for i in range(ct_volume.shape[2]):
         ds = copy.deepcopy(ct_headers[i])
 
@@ -630,7 +633,483 @@ def export_ct_with_overlay_planes(
 
         out_name = os.path.join(output_folder, f"CT_OVERLAY_PLANE_{i:04d}.dcm")
         ds.save_as(out_name)
+        saved_ct_overlay_headers.append(copy.deepcopy(ds))
+        
+        #ps_name = os.path.join(output_folder, f"GSPS_COLOR_OVERLAY_{i:04d}.dcm")
+        #create_gsps_for_overlay_ct(ds, ps_name)
+    #gsps_path = os.path.join(output_folder, "GSPS_COLOR_OVERLAY_ALL.dcm")
+    #create_gsps_for_overlay_seriesG(saved_ct_overlay_headers, gsps_path)  #****************************************************
+def export_dicom_segmentation(
+    output_folder,
+    ct_headers,
+    dose,
+    rd,
+    ct_headers_for_spacing
+):
 
+    os.makedirs(output_folder, exist_ok=True)
+
+    global_max = np.max(dose)
+
+    masks = []
+
+    for i in range(len(ct_headers)):
+
+        ds = ct_headers[i]
+
+        dose_i = int(i * dose.shape[0] / len(ct_headers))
+        dose_i = min(max(dose_i, 0), dose.shape[0] - 1)
+
+        raw_dose = dose[dose_i, :, :]
+        dose_norm = raw_dose / global_max
+
+        mask70 = dose_norm >= 0.70
+        mask95 = dose_norm >= 0.90
+
+        ct0 = ct_headers_for_spacing[0]
+
+        ct_ps = [float(x) for x in ct0.PixelSpacing]
+        rd_ps = [float(x) for x in rd.PixelSpacing]
+
+        scale_row = rd_ps[0] / ct_ps[0]
+        scale_col = rd_ps[1] / ct_ps[1]
+
+        new_rows = int(raw_dose.shape[0] * scale_row)
+        new_cols = int(raw_dose.shape[1] * scale_col)
+
+        mask70_rs = resize(
+            mask70.astype(np.float32),
+            output_shape=(new_rows, new_cols),
+            preserve_range=True,
+            anti_aliasing=False
+        ) > 0.5
+
+        mask95_rs = resize(
+            mask95.astype(np.float32),
+            output_shape=(new_rows, new_cols),
+            preserve_range=True,
+            anti_aliasing=False
+        ) > 0.5
+
+        ct_origin = np.array(ct0.ImagePositionPatient, dtype=float)
+        rd_origin = np.array(rd.ImagePositionPatient, dtype=float)
+
+        delta = rd_origin - ct_origin
+
+        r0 = int(round(delta[1] / ct_ps[0]))
+        c0 = int(round(delta[0] / ct_ps[1]))
+
+        canvas70 = np.zeros((ds.Rows, ds.Columns), dtype=np.uint8)
+        canvas95 = np.zeros((ds.Rows, ds.Columns), dtype=np.uint8)
+
+        r1 = max(r0, 0)
+        c1 = max(c0, 0)
+
+        r2 = min(r0 + new_rows, ds.Rows)
+        c2 = min(c0 + new_cols, ds.Columns)
+
+        mr1 = r1 - r0
+        mc1 = c1 - c0
+
+        mr2 = mr1 + (r2 - r1)
+        mc2 = mc1 + (c2 - c1)
+
+        if r2 > r1 and c2 > c1:
+
+            canvas70[r1:r2, c1:c2] = mask70_rs[mr1:mr2, mc1:mc2]
+            canvas95[r1:r2, c1:c2] = mask95_rs[mr1:mr2, mc1:mc2]
+
+        masks.append(np.stack([canvas70, canvas95], axis=-1))
+
+    pixel_array = np.stack(masks, axis=0)
+
+    print("SEG pixel_array shape:", pixel_array.shape)
+# ====================================================================
+# Segment Sescription 
+#====================================================================
+    segment70 = hd.seg.SegmentDescription(
+        segment_number=1,
+        segment_label="Dose70",
+        segmented_property_category=hd.sr.CodedConcept(
+            value="T-D0050",
+            scheme_designator="SRT",
+            meaning="Tissue"
+        ),
+        segmented_property_type=hd.sr.CodedConcept(
+            value="T-D0050",
+            scheme_designator="SRT",
+            meaning="Dose Region"
+        ),
+        algorithm_type=hd.seg.SegmentAlgorithmTypeValues.MANUAL,
+        #algorithm_name="RT_Dose_System"
+    )
+
+    segment95 = hd.seg.SegmentDescription(
+        segment_number=2,
+        segment_label="Dose90",
+        segmented_property_category=hd.sr.CodedConcept(
+            value="T-D0050",
+            scheme_designator="SRT",
+            meaning="Tissue"
+        ),
+        segmented_property_type=hd.sr.CodedConcept(
+            value="T-D0050",
+            scheme_designator="SRT",
+            meaning="Dose Region"
+        ),
+        algorithm_type=hd.seg.SegmentAlgorithmTypeValues.MANUAL,
+        #algorithm_name="RT_Dose_System"
+    )
+# =====================================================================
+# Creat SEG DataSET
+# ======================================================================
+    seg = hd.seg.Segmentation(
+        source_images=ct_headers,
+        pixel_array=pixel_array,
+        segmentation_type=hd.seg.SegmentationTypeValues.BINARY,
+        segment_descriptions=[
+            segment70,
+            segment95
+        ],
+        series_instance_uid=pydicom.uid.generate_uid(),
+        series_number=9007,
+        sop_instance_uid=pydicom.uid.generate_uid(),
+        instance_number=1,
+        manufacturer="RT_PROJECT",
+        manufacturer_model_name="DoseSeg",
+        software_versions="1.0",
+        device_serial_number="001"
+    )
+
+    out_file = os.path.join(
+        output_folder,
+        "AI_DOSE_SEGMENTATION.dcm"
+    )
+
+    seg.save_as(out_file)
+
+    print("Saved:", out_file)
+    
+"""
+GSPS_SOP_CLASS = "1.2.840.10008.5.1.4.1.1.11.1"
+
+def create_gsps_for_overlay_ct(ct_ds, output_path):
+    
+    file_meta = FileMetaDataset()
+    file_meta.MediaStorageSOPClassUID = GSPS_SOP_CLASS
+    file_meta.MediaStorageSOPInstanceUID = pydicom.uid.generate_uid()
+    file_meta.TransferSyntaxUID = pydicom.uid.ExplicitVRLittleEndian
+    file_meta.ImplementationClassUID = pydicom.uid.generate_uid()
+
+    gsps = FileDataset(
+        output_path,
+        {},
+        file_meta=file_meta,
+        preamble=b"\0" * 128
+    )
+
+    gsps.is_little_endian = True
+    gsps.is_implicit_VR = False
+
+    # Patient / Study
+    for tag in [
+        "PatientName", "PatientID", "PatientBirthDate", "PatientSex",
+        "StudyInstanceUID", "StudyDate", "StudyTime",
+        "StudyID", "AccessionNumber", "ReferringPhysicianName"
+    ]:
+        if hasattr(ct_ds, tag):
+            setattr(gsps, tag, getattr(ct_ds, tag))
+
+    # PR Series = 9006
+    gsps.Modality = "PR"
+    gsps.SeriesInstanceUID = pydicom.uid.generate_uid()
+    gsps.SeriesNumber = 9006
+    gsps.SeriesDescription = "GSPS_COLOR_FOR_OVERLAY_9005"
+
+    gsps.SOPClassUID = GSPS_SOP_CLASS
+    gsps.SOPInstanceUID = file_meta.MediaStorageSOPInstanceUID
+    gsps.InstanceNumber = 1
+
+    now = datetime.datetime.now()
+    gsps.ContentLabel = "DOSE_COLOR"
+    gsps.ContentDescription = "Color layer mapping for DICOM overlays"
+    gsps.ContentCreatorName = "RT_OVERLAY_VIEWER"
+    gsps.PresentationCreationDate = now.strftime("%Y%m%d")
+    gsps.PresentationCreationTime = now.strftime("%H%M%S")
+
+    # Reference CT+Overlay 9005 image
+    ref_img = Dataset()
+    ref_img.ReferencedSOPClassUID = ct_ds.SOPClassUID
+    ref_img.ReferencedSOPInstanceUID = ct_ds.SOPInstanceUID
+
+    ref_series = Dataset()
+    ref_series.SeriesInstanceUID = ct_ds.SeriesInstanceUID
+    ref_series.ReferencedImageSequence = Sequence([ref_img])
+
+    gsps.ReferencedSeriesSequence = Sequence([ref_series])
+
+    # Displayed Area
+    area = Dataset()
+    area.ReferencedImageSequence = Sequence([ref_img])
+    area.DisplayedAreaTopLeftHandCorner = [1, 1]
+    area.DisplayedAreaBottomRightHandCorner = [int(ct_ds.Columns), int(ct_ds.Rows)]
+    area.PresentationSizeMode = "SCALE TO FIT"
+    area.PresentationPixelAspectRatio = [1, 1]
+    gsps.DisplayedAreaSelectionSequence = Sequence([area])
+
+    # Presentation LUT
+    lut = Dataset()
+    lut.PresentationLUTShape = "IDENTITY"
+    gsps.SoftcopyPresentationLUTSequence = Sequence([lut])
+
+    # Graphic Layers with color
+    layer70 = Dataset()
+    layer70.GraphicLayer = "LAYER_DOSE_70"
+    layer70.GraphicLayerOrder = 1
+    layer70.GraphicLayerRecommendedDisplayCIELabValue = [65535, 0, 32768]  # green-ish
+    layer70.GraphicLayerDescription = "Dose boundary 70"
+
+    layer90 = Dataset()
+    layer90.GraphicLayer = "LAYER_DOSE_90"
+    layer90.GraphicLayerOrder = 2
+    layer90.GraphicLayerRecommendedDisplayCIELabValue = [65535, 32768, 32768]  # red-ish
+    layer90.GraphicLayerDescription = "Dose boundary 90"
+
+    gsps.GraphicLayerSequence = Sequence([layer70, layer90])
+
+    # Overlay Activation: map 6000/6002 to layers
+    gsps.add_new((0x6000, 0x1001), "CS", "LAYER_DOSE_70")
+    gsps.add_new((0x6002, 0x1001), "CS", "LAYER_DOSE_90")
+
+    gsps.save_as(output_path, write_like_original=False)
+
+def create_gsps_for_overlay_series(ct_ds_list, output_path):
+    
+    if not ct_ds_list:
+        print("Error: ct_ds_list is empty")
+        return
+    
+    first_ct = ct_ds_list[0]
+    GSPS_SOP_CLASS = "1.2.840.10008.5.1.4.1.1.11.1"
+    
+    file_meta = FileMetaDataset()
+    file_meta.FileMetaInformationGroupLength = 222
+    file_meta.FileMetaInformationVersion = b'\x00\x01'
+    
+    file_meta.MediaStorageSOPClassUID = GSPS_SOP_CLASS
+    file_meta.MediaStorageSOPInstanceUID = pydicom.uid.generate_uid()
+    file_meta.TransferSyntaxUID = pydicom.uid.ExplicitVRLittleEndian
+    file_meta.ImplementationClassUID = '1.2.826.0.1.3680043.2.1143.100.1' # pydicom.uid.generate_uid()
+
+    gsps = FileDataset(
+        output_path,
+        {},
+        file_meta=file_meta,
+        preamble=b"\0" * 128
+    )
+
+    gsps.is_little_endian = True
+    gsps.is_implicit_VR = False
+
+    # Patient / Study
+    for tag in [
+        "PatientName", "PatientID", "PatientBirthDate", "PatientSex",
+        "StudyInstanceUID", "StudyDate", "StudyTime",
+        "StudyID", "AccessionNumber", "ReferringPhysicianName"
+    ]:
+        if hasattr(first_ct, tag):
+            setattr(gsps, tag, getattr(first_ct, tag))
+
+    # PR Series = 9006
+    gsps.Modality = "PR"
+    gsps.SeriesInstanceUID = pydicom.uid.generate_uid()
+    gsps.SeriesNumber = 9006
+    gsps.SeriesDescription = "GSPS_COLOR_MAPPING_9005"
+
+    gsps.SOPClassUID = GSPS_SOP_CLASS
+    gsps.SOPInstanceUID = file_meta.MediaStorageSOPInstanceUID
+    gsps.InstanceNumber = 1
+
+    now = datetime.datetime.now()
+    gsps.ContentLabel = "DOSE_COLOR"
+    gsps.ContentDescription = "Color layer mapping for DICOM overlays"
+    gsps.ContentCreatorName = "RT_OVERLAY_VIEWER"
+    gsps.PresentationCreationDate = now.strftime("%Y%m%d")
+    gsps.PresentationCreationTime = now.strftime("%H%M%S")
+
+    # Reference all CT+Overlay slices
+    ref_images = []
+    for ct_ds in ct_ds_list:
+        ref_img = Dataset()
+        ref_img.ReferencedSOPClassUID = ct_ds.SOPClassUID
+        ref_img.ReferencedSOPInstanceUID = ct_ds.SOPInstanceUID
+        ref_images.append(ref_img)
+
+    ref_series = Dataset()
+    ref_series.SeriesInstanceUID = first_ct.SeriesInstanceUID
+    ref_series.ReferencedImageSequence = Sequence(ref_images)
+    gsps.ReferencedSeriesSequence = Sequence([ref_series])
+
+    # Displayed Area for all referenced images
+    area = Dataset()
+    area.ReferencedImageSequence = Sequence(ref_images)
+    area.DisplayedAreaTopLeftHandCorner = [1, 1]
+    area.DisplayedAreaBottomRightHandCorner = [
+        int(first_ct.Columns),
+        int(first_ct.Rows)
+    ]
+    area.PresentationSizeMode = "SCALE TO FIT"
+    area.PresentationPixelAspectRatio = [1, 1]
+    #area.ReferencedImageSequence = Sequence(ref_images) 
+    if hasattr(first_ct, 'PixelSpacing'):
+        area.PresentationPixelSpacing = first_ct.PixelSpacing
+        
+    gsps.DisplayedAreaSelectionSequence = Sequence([area])
+
+    # Presentation LUT
+    gsps.PresentationLUTShape = "IDENTITY"
+
+    # Graphic layers
+    layer70 = Dataset()
+    layer70.GraphicLayer = "LAYER_DOSE_70"
+    layer70.GraphicLayerOrder = 1
+    layer70.GraphicLayerDescription = "Dose boundary 70"
+    layer70.GraphicLayerRecommendedDisplayCIELABValue = [65535, 0, 32768]
+
+    layer90 = Dataset()
+    layer90.GraphicLayer = "LAYER_DOSE_90"
+    layer90.GraphicLayerOrder = 2
+    layer90.GraphicLayerDescription = "Dose boundary 90"
+    layer90.GraphicLayerRecommendedDisplayCIELABValue = [65535, 32768, 32768]
+
+    gsps.GraphicLayerSequence = Sequence([layer70, layer90])
+
+    # Overlay Activation
+    gsps.add_new((0x6000, 0x1001), "CS", "LAYER_DOSE_70")
+    gsps.add_new((0x6002, 0x1001), "CS", "LAYER_DOSE_90")
+
+    gsps.save_as(output_path, write_like_original=False)
+    print("Saved GSPS series:", output_path)
+
+import datetime
+import pydicom
+from pydicom.dataset import Dataset, FileDataset
+from pydicom.sequence import Sequence
+
+def create_gsps_for_overlay_seriesG(ct_ds_list, output_path):
+    if not ct_ds_list:
+        print("Error: ct_ds_list is empty")
+        return
+
+    first_ct = ct_ds_list[0]
+    GSPS_SOP_CLASS = '1.2.840.10008.5.1.4.1.1.11.1' # มาตรฐานคลาส GSPS Storage
+
+    # 1. นิยามข้อมูลหัวไฟล์ (File Meta) ให้เสถียรและระบุสิทธิ์ซอฟต์แวร์ให้ถูกต้อง
+    file_meta = Dataset()
+    file_meta.FileMetaInformationGroupLength = 222
+    file_meta.FileMetaInformationVersion = b'\x00\x01'
+    file_meta.MediaStorageSOPClassUID = GSPS_SOP_CLASS
+    file_meta.MediaStorageSOPInstanceUID = pydicom.uid.generate_uid()
+    file_meta.TransferSyntaxUID = pydicom.uid.ExplicitVRLittleEndian
+    # ใช้เลขคลาสมาตรฐานสากล ห้ามสุ่มเด็ดขาด ป้องกันระบบคัดกรองขยะ
+    file_meta.ImplementationClassUID = '1.2.826.0.1.3680043.2.1143.100.1' 
+    file_meta.ImplementationVersionName = 'PYDICOM_GSPS_100'
+
+    # 2. เริ่มต้นโครงสร้างข้อมูล Dataset หลัก
+    gsps = FileDataset(output_path, Dataset(), file_meta=file_meta, preamble=b"\0" * 128)
+    gsps.is_little_endian = True
+    gsps.is_implicit_VR = False
+
+    # คัดลอกแท็กตัวตนและการตรวจ (Patient/Study Tags) จากภาพแรก
+    tags_to_copy = [
+        "PatientName", "PatientID", "PatientBirthDate", "PatientSex",
+        "StudyInstanceUID", "StudyDate", "StudyTime",
+        "StudyID", "AccessionNumber", "ReferringPhysicianName"
+    ]
+    for tag in tags_to_copy:
+        if hasattr(first_ct, tag):
+            setattr(gsps, tag, getattr(first_ct, tag))
+
+    # กำหนดลักษณะเฉพาะของซีรีส์ PR ใหม่
+    gsps.Modality = "PR"
+    gsps.SeriesInstanceUID = pydicom.uid.generate_uid()
+    gsps.SeriesNumber = 9006
+    gsps.SeriesDescription = "GSPS_COLOR_FOR_OVERLAY_9005"
+
+    gsps.SOPClassUID = GSPS_SOP_CLASS
+    gsps.SOPInstanceUID = file_meta.MediaStorageSOPInstanceUID
+    gsps.InstanceNumber = 1
+
+    # ตั้งเวลาสร้างเอกสารข้อมูล
+    now = datetime.datetime.now()
+    gsps.ContentLabel = "DOSE_COLOR"
+    gsps.ContentDescription = "Color layer mapping for DICOM overlays"
+    gsps.ContentCreatorName = "RT_OVERLAY_VIEWER"
+    gsps.PresentationCreationDate = now.strftime("%Y%m%d")
+    gsps.PresentationCreationTime = now.strftime("%H%M%S")
+
+    # 3. จัดทำสารบัญภาพอ้างอิง (Referenced Series/Image Sequence) ครบทุกสไลซ์
+    ref_images = []
+    for ct_ds in ct_ds_list:
+        ref_img = Dataset()
+        ref_img.ReferencedSOPClassUID = ct_ds.SOPClassUID
+        ref_img.ReferencedSOPInstanceUID = ct_ds.SOPInstanceUID
+        ref_images.append(ref_img)
+
+    ref_series = Dataset()
+    ref_series.SeriesInstanceUID = first_ct.SeriesInstanceUID
+    ref_series.ReferencedImageSequence = Sequence(ref_images)
+    gsps.ReferencedSeriesSequence = Sequence([ref_series])
+
+    # 4. โมดูลบังคับที่ 1: จัดระบบพื้นที่แสดงผล (Displayed Area Module) ให้สมบูรณ์แบบ
+    area = Dataset()
+    area.ReferencedImageSequence = Sequence(ref_images) # ต้องผูกภาพอ้างอิงในหน้านี้ด้วย
+    # พิกัดขอบหน้าจอแบบ Signed Long (SL) ต้องส่งเป็นลิสต์ของตัวเลขจำนวนเต็มจำนวน 2 คู่
+    area.DisplayedAreaTopLeftHandCorner = [1, 1]
+    area.DisplayedAreaBottomRightHandCorner = [int(first_ct.Columns), int(first_ct.Rows)]
+    area.PresentationSizeMode = "SCALE TO FIT"
+    area.PresentationPixelAspectRatio = [1, 1]
+    
+    if hasattr(first_ct, 'PixelSpacing'):
+        area.PresentationPixelSpacing = first_ct.PixelSpacing
+
+    gsps.DisplayedAreaSelectionSequence = Sequence([area])
+
+    # 5. โมดูลบังคับที่ 2: นิยามระบบการคุมแสงภาพ (Softcopy VOI LUT Module) ห้ามขาดเด็ดขาด!
+    # จุดนี้คือจุดที่ทำให้ซอฟต์แวร์ Philips ล่มบ่อยที่สุดหากไม่มีการประกาศโครงสร้าง
+    voi_lut_item = Dataset()
+    voi_lut_item.ReferencedImageSequence = Sequence(ref_images)
+    # ดึงค่าควบคุมระดับความสว่างหน้าต่างภาพ (Window Center/Width) จากภาพ CT แผ่นแรกมาใช้เป็นมาตรฐาน
+    voi_lut_item.WindowCenter = getattr(first_ct, 'WindowCenter', 40)
+    voi_lut_item.WindowWidth = getattr(first_ct, 'WindowWidth', 400)
+    gsps.SoftcopyVOILUTSequence = Sequence([voi_lut_item])
+
+    # โครงสร้างบังคับสำหรับแปลงสเกลสีจอภาพดั้งเดิม
+    gsps.PresentationLUTShape = "IDENTITY"
+
+    # 6. นิยามเลเยอร์สี (แก้ไขชื่อแท็กพิกัดสากลเป็นตัวพิมพ์ใหญ่ CIELABValue เรียบร้อย)
+    layer70 = Dataset()
+    layer70.GraphicLayer = "LAYER_DOSE_70"
+    layer70.GraphicLayerOrder = 1
+    layer70.GraphicLayerDescription = "Dose boundary 70"
+    layer70.GraphicLayerRecommendedDisplayCIELABValue = [65535, 0, 32768] # สีเขียวในพิกัด CIELAB
+
+    layer90 = Dataset()
+    layer90.GraphicLayer = "LAYER_DOSE_90"
+    layer90.GraphicLayerOrder = 2
+    layer90.GraphicLayerDescription = "Dose boundary 90"
+    layer90.GraphicLayerRecommendedDisplayCIELABValue = [65535, 32768, 32768] # สีแดงในพิกัด CIELAB
+
+    gsps.GraphicLayerSequence = Sequence([layer70, layer90])
+
+    # 7. ผูกสัญญาณเปิดโครงสร้างสีผ่าน Overlay Activation Module
+    gsps.add_new((0x6000, 0x1001), "CS", "LAYER_DOSE_70")
+    gsps.add_new((0x6002, 0x1001), "CS", "LAYER_DOSE_90")
+
+    # บันทึกไฟล์โดยปิดคำสั่งหยวนข้อมูล บังคับให้คอมพายตามโครงสร้างมาตรฐานสากล
+    gsps.save_as(output_path, write_like_original=False)
+    print("Saved Standard-compliant GSPS series:", output_path)
+"""
 # -----------------------------
 # MAIN
 # -----------------------------
