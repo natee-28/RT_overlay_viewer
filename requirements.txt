@@ -6,3 +6,4 @@ scikit-image
 scipy
 SimpleITK
 rt-utils
+highdicom
