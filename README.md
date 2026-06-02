@@ -1,6 +1,6 @@
 # RT Dose Overlay DICOM Exporter
 
-CT + RTDOSE overlay viewer and DICOM exporter.
+CT + reduced RTDOSE overlay viewer and DICOM exporter.
 
 ## Features
 
