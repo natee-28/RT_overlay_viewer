@@ -18,6 +18,11 @@ CT + RTDOSE overlay viewer and DICOM exporter.
 2. RGB color overlay export
 3. DICOM Overlay Plane export (experimental)
 
+## Tested result:
+- DICOM Overlay Plane was successfully displayed on Philips Workstation and Synapse PACS.
+- RGB export is provided for fixed color visualization.
+- GSPS and DICOM SEG were explored but not used in the final workflow due to limited workstation/PACS rendering support.
+
 ---
 
 ### Installation
