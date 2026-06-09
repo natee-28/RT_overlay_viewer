@@ -637,8 +637,8 @@ def export_ct_with_overlay_planes(
         
         #ps_name = os.path.join(output_folder, f"GSPS_COLOR_OVERLAY_{i:04d}.dcm")
         #create_gsps_for_overlay_ct(ds, ps_name)
-    #gsps_path = os.path.join(output_folder, "GSPS_COLOR_OVERLAY_ALL.dcm")
-    #create_gsps_for_overlay_seriesG(saved_ct_overlay_headers, gsps_path)  #****************************************************
+    gsps_path = os.path.join(output_folder, "GSPS_COLOR_OVERLAY_ALL.dcm")
+    create_gsps_for_overlay_seriesG(saved_ct_overlay_headers, gsps_path)  #****************************************************
 def export_dicom_segmentation(
     output_folder,
     ct_headers,
@@ -790,7 +790,7 @@ def export_dicom_segmentation(
 
     print("Saved:", out_file)
     
-"""
+
 GSPS_SOP_CLASS = "1.2.840.10008.5.1.4.1.1.11.1"
 
 def create_gsps_for_overlay_ct(ct_ds, output_path):
@@ -1109,7 +1109,7 @@ def create_gsps_for_overlay_seriesG(ct_ds_list, output_path):
     # บันทึกไฟล์โดยปิดคำสั่งหยวนข้อมูล บังคับให้คอมพายตามโครงสร้างมาตรฐานสากล
     gsps.save_as(output_path, write_like_original=False)
     print("Saved Standard-compliant GSPS series:", output_path)
-"""
+
 # -----------------------------
 # MAIN
 # -----------------------------
